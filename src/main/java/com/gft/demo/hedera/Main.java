@@ -17,7 +17,7 @@ public class Main {
         var demoAccountCred = AccountCred.fromEnv("DEMO_ACCOUNT_A_ID", "DEMO_PRIVATE_A_KEY");
         var myTokenId = TokenId.fromString(Dotenv.load().get("MY_TOKEN_ID"));
 
-        newAccountCred = accountClient.createAccount(100);
+        accountClient.createAccount(100);
         System.out.println("===========================");
         System.out.println(newAccountCred);
 

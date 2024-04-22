@@ -1,13 +1,21 @@
 package com.gft.demo.hedera;
 
+import com.google.protobuf.ByteString;
 import com.hedera.hashgraph.sdk.*;
+import com.hedera.hashgraph.sdk.proto.Transaction;
 import lombok.SneakyThrows;
 
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Function;
+
+import static com.hedera.hashgraph.sdk.proto.Transaction.*;
 
 public class AccountClient implements AutoCloseable {
   private final AccountId mainAccountId;
@@ -40,43 +48,98 @@ public class AccountClient implements AutoCloseable {
   }
 
   @SneakyThrows
-  public AccountCred createAccount(int balance) throws PrecheckStatusException, TimeoutException, ReceiptStatusException {
+  public void createAccount(int balance) throws PrecheckStatusException, TimeoutException, ReceiptStatusException {
     var privateKey = PrivateKey.generateED25519();
     var publicKey = privateKey.getPublicKey();
     AccountCreateTransaction transaction = new AccountCreateTransaction()
       .setKey(publicKey)
       .setInitialBalance(Hbar.fromTinybars(balance));
 
+    setField(transaction, "logger", client.getLogger());
     findMethod(transaction, "mergeFromClient", Client.class).invoke(transaction, client);
     findMethod(transaction, "onExecute", Client.class).invoke(transaction, client);
     findMethod(transaction, "checkNodeAccountIds").invoke(transaction);
     findMethod(transaction, "setNodesFromNodeAccountIds", Client.class).invoke(transaction, client);
 
-//    mergeFromClient(client);
-//    onExecute(client);
-//    checkNodeAccountIds();
-//    setNodesFromNodeAccountIds(client);
-//    @Nullable Network network, int attempt, Duration grpcDeadline
-    //            GrpcRequest grpcRequest = new GrpcRequest(client.network, attempt, currentTimeout);
-    Class grpcRequestClass = findNested(transaction, "GrpcRequest");
-    Class<?> networkClass = Class.forName("com.hedera.hashgraph.sdk.Network");
-    System.out.println(grpcRequestClass);
-    System.out.println(networkClass);
+    var grpcRequest = createGrpcRequest(transaction);
+    Transaction request = (Transaction) getField(grpcRequest, "request");
+    byte[] signedBytes = request.getSignedTransactionBytes().toByteArray();
+    System.out.println(Arrays.toString(signedBytes));
 
-    Object network = findField(client, "network");
-    System.out.println(network);
 
-//    System.out.println(findNested);
-    Constructor declaredConstructor1 = grpcRequestClass.getDeclaredConstructors()[0];
-    declaredConstructor1.setAccessible(true);
-    Object o = declaredConstructor1.newInstance(transaction,network, 1, client.getRequestTimeout());
-//    Constructor declaredConstructor = grpcRequestClass.getDeclaredConstructor(Executable.class, networkClass, int.class, Duration.class);
-//    Object o = declaredConstructor.newInstance();
+//    ArrayList list = new ArrayList();
+//    Transaction build = newBuilder()
+//      .setSignedTransactionBytes(ByteString.copyFrom(signedBytes))
+//      .build();
+//    list.add(build);
+//    setField(transaction2, "outerTransactions", list);
+//    var o = getField(transaction2, "outerTransactions");
+//    List o1 = (List) o;
+//    o1.add("test");
+//    System.out.println(o1);
+//
+//
+    AccountCreateTransaction transaction2 = new AccountCreateTransaction()
+      .setKey(publicKey)
+      .setInitialBalance(Hbar.fromTinybars(balance));
+
+    var grpcRequest2 = createGrpcRequest(transaction);
+
+//
+//    var grpcRequest2 = grpcRequestConstructor.newInstance(transaction, getField(client, "network"), 1, client.getRequestTimeout());
+//    var o = getField(transaction2, "blockingUnaryCall");
+//    ((Function) o).apply(grpcRequest2);
+//
+//    var mapResponse = findMethod(grpcRequest2, "mapResponse");
+//    Object invoke = mapResponse.invoke(grpcRequest);
+//    System.out.println(invoke);
 //    System.out.println(o);
-    var newAccountTx = transaction.execute(client);
-    var newAccountId = newAccountTx.getReceipt(client).accountId;
-    return new AccountCred(newAccountId, privateKey);
+//    transaction.execute(client);
+
+//    var newAccountTx = transaction.executeX(client, client.getRequestTimeout());
+//    System.out.println("===>"+newAccountTx.getSignedTransactionBytes());
+//    var newAccountId = newAccountTx.getReceipt(client).accountId;
+//    return new AccountCred(newAccountId, privateKey);
   }
+
+  private Object createGrpcRequest(AccountCreateTransaction transaction) throws ClassNotFoundException, InstantiationException, IllegalAccessException, InvocationTargetException {
+    var grpcRequestClass = findNestedClass(transaction, "GrpcRequest");
+    var networkClass = Class.forName("com.hedera.hashgraph.sdk.Network");
+    var grpcRequestConstructor = grpcRequestClass.getDeclaredConstructors()[0];
+    grpcRequestConstructor.setAccessible(true);
+    var grpcRequest = grpcRequestConstructor.newInstance(transaction, getField(client, "network"), 1, client.getRequestTimeout());
+    return grpcRequest;
+  }
+
+  @SneakyThrows
+  private static Object getField(Object object, String name) {
+    Field field = findField(object, name);
+    return field.get(object);
+  }
+
+  @SneakyThrows
+  private static void setField(Object object, String name, Object value) {
+    Field field = findField(object, name);
+    field.set(object, value);
+  }
+
+  @SneakyThrows
+  private static Field findField(Object object, String name) {
+    Class clazz = object.getClass();
+    while (true) {
+      try {
+        Field field = clazz.getDeclaredField(name);
+        field.setAccessible(true);
+        return field;
+      } catch (NoSuchFieldException | SecurityException e) {
+        clazz = clazz.getSuperclass();
+        if (clazz == null) {
+          throw e;
+        }
+      }
+    }
+  }
+
 
   @SneakyThrows
   private static Method findMethod(Object object, String name, Class<?>... parameterTypes) {
@@ -96,7 +159,12 @@ public class AccountClient implements AutoCloseable {
   }
 
   @SneakyThrows
-  private static Class findNested(Object object, String name) {
+  private static void invoke(Method method, Object obj, Object... args) {
+    method.invoke(obj, args);
+  }
+
+  @SneakyThrows
+  private static Class findNestedClass(Object object, String name) {
     Class clazz = object.getClass();
     while (true) {
       for (Class declaredClass : clazz.getDeclaredClasses()) {
@@ -108,18 +176,6 @@ public class AccountClient implements AutoCloseable {
         throw null;
       }
     }
-  }
-
-  @SneakyThrows
-  private static void invoke(Method method, Object obj, Object... args) {
-    method.invoke(obj, args);
-  }
-
-  @SneakyThrows
-  private static Object findField(Object object, String name){
-    Field declaredField = object.getClass().getDeclaredField(name);
-    declaredField.setAccessible(true);
-    return declaredField.get(object);
   }
 
   public Status sendTo(AccountId receiver, long amount) throws PrecheckStatusException, TimeoutException, ReceiptStatusException {

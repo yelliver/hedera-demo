@@ -13,6 +13,11 @@ dependencies {
     compileOnly 'org.projectlombok:lombok:1.18.32'
     annotationProcessor 'org.projectlombok:lombok:1.18.32'
 
+    implementation 'com.google.guava:guava:32.0.1-android'
+    implementation 'io.grpc:grpc-stub:1.58.0'
+    implementation 'org.bouncycastle:bcprov-jdk15to18:1.76'
+    implementation 'com.github.spotbugs:spotbugs-annotations:4.7.3'
+
     implementation 'com.hedera.hashgraph:sdk:2.29.0'
     implementation 'io.grpc:grpc-netty-shaded:1.46.0'
     implementation 'io.github.cdimascio:dotenv-java:2.3.2'
